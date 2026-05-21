@@ -1,11 +1,11 @@
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 
 const router = express.Router();
 
-const uploadDirectory = path.join(__dirname, '..', 'uploads');
+const uploadDirectory = path.join(__dirname, "..", "uploads");
 
 if (!fs.existsSync(uploadDirectory)) {
     fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -17,19 +17,19 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const timestamp = Date.now();
-        const safeName = file.originalname.replace(/\s+/g, '-').toLowerCase();
+        const safeName = file.originalname.replace(/\s+/g, "-").toLowerCase();
         cb(null, `${timestamp}-${safeName}`);
     }
 });
 
 const fileFilter = (req, file, cb) => {
-    const isGifMimeType = file.mimetype === 'image/gif';
-    const hasGifExtension = path.extname(file.originalname).toLowerCase() === '.gif';
+    const isGifMimeType = file.mimetype === "image/gif";
+    const hasGifExtension = path.extname(file.originalname).toLowerCase() === ".gif";
 
     if (isGifMimeType && hasGifExtension) {
         cb(null, true);
     } else {
-        cb(new Error('Nur GIF-Dateien sind erlaubt.'), false);
+        cb(new Error("Nur GIF-Dateien sind erlaubt."), false);
     }
 };
 
@@ -42,17 +42,55 @@ const upload = multer({
     }
 });
 
-router.post('/gif', upload.single('gifFile'), (req, res) => {
+function getGifFilesSortedByNewest() {
+    return fs.readdirSync(uploadDirectory)
+        .filter(file => path.extname(file).toLowerCase() === ".gif")
+        .map(file => {
+            const fullPath = path.join(uploadDirectory, file);
+            const stats = fs.statSync(fullPath);
+
+            return {
+                name: file,
+                fullPath,
+                path: `/uploads/${file}`,
+                modifiedTime: stats.mtimeMs
+            };
+        })
+        .sort((a, b) => b.modifiedTime - a.modifiedTime);
+}
+
+function deleteOlderGifs() {
+    const files = getGifFilesSortedByNewest();
+
+    if (files.length <= 1) {
+        return;
+    }
+
+    const filesToDelete = files.slice(1);
+
+    for (const file of filesToDelete) {
+        try {
+            fs.unlinkSync(file.fullPath);
+            console.log(`Altes GIF gelöscht: ${file.name}`);
+        } catch (error) {
+            console.error(`Fehler beim Löschen von ${file.name}:`, error);
+        }
+    }
+}
+
+router.post("/gif", upload.single("gifFile"), (req, res) => {
     if (!req.file) {
         return res.status(400).json({
             success: false,
-            message: 'Keine Datei hochgeladen.'
+            message: "Keine Datei hochgeladen."
         });
     }
 
+    deleteOlderGifs();
+
     res.status(201).json({
         success: true,
-        message: 'GIF erfolgreich hochgeladen.',
+        message: "GIF erfolgreich hochgeladen.",
         file: {
             originalName: req.file.originalname,
             storedName: req.file.filename,
@@ -63,37 +101,29 @@ router.post('/gif', upload.single('gifFile'), (req, res) => {
     });
 });
 
-router.get('/latest', (req, res) => {
+router.get("/latest", (req, res) => {
     try {
-        const files = fs.readdirSync(uploadDirectory)
-            .filter(file => path.extname(file).toLowerCase() === '.gif')
-            .map(file => {
-                const fullPath = path.join(uploadDirectory, file);
-                const stats = fs.statSync(fullPath);
-
-                return {
-                    name: file,
-                    path: `/uploads/${file}`,
-                    modifiedTime: stats.mtimeMs
-                };
-            })
-            .sort((a, b) => b.modifiedTime - a.modifiedTime);
+        const files = getGifFilesSortedByNewest();
 
         if (files.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'Noch keine GIFs vorhanden.'
+                message: "Noch keine GIFs vorhanden."
             });
         }
 
         res.json({
             success: true,
-            latestGif: files[0]
+            latestGif: {
+                name: files[0].name,
+                path: files[0].path,
+                modifiedTime: files[0].modifiedTime
+            }
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: 'Fehler beim Laden des neuesten GIFs.'
+            message: "Fehler beim Laden des neuesten GIFs."
         });
     }
 });
@@ -109,7 +139,7 @@ router.use((error, req, res, next) => {
     if (error) {
         return res.status(400).json({
             success: false,
-            message: error.message || 'Unbekannter Upload-Fehler.'
+            message: error.message || "Unbekannter Upload-Fehler."
         });
     }
 
