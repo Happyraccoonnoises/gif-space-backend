@@ -94,14 +94,21 @@ function getFileHash(filePath) {
 
 function readBlacklist() {
     try {
+        console.log("Blacklist-Pfad:", blacklistFilePath);
+        console.log("Blacklist-Datei existiert:", fs.existsSync(blacklistFilePath));
+
         if (!fs.existsSync(blacklistFilePath)) {
             return { blockedHashes: [] };
         }
 
         const rawData = fs.readFileSync(blacklistFilePath, "utf8");
+        console.log("Blacklist-Rohinhalt:", rawData);
+
         const parsedData = JSON.parse(rawData);
+        console.log("Blacklist-Parsed:", parsedData);
 
         if (!Array.isArray(parsedData.blockedHashes)) {
+            console.log("blockedHashes ist kein Array");
             return { blockedHashes: [] };
         }
 
@@ -124,6 +131,10 @@ router.post("/gif", upload.single("gifFile"), (req, res) => {
         const uploadedFilePath = path.join(uploadDirectory, req.file.filename);
         const fileHash = getFileHash(uploadedFilePath);
         const blacklist = readBlacklist();
+
+        console.log("Upload-Hash:", fileHash);
+        console.log("Blacklist-Hashes:", blacklist.blockedHashes);
+        console.log("Hash ist geblockt:", blacklist.blockedHashes.includes(fileHash));
 
         if (blacklist.blockedHashes.includes(fileHash)) {
             fs.unlinkSync(uploadedFilePath);
