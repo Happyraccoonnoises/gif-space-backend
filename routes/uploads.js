@@ -6,6 +6,9 @@ const fs = require("fs");
 const router = express.Router();
 
 const uploadDirectory = path.join(__dirname, "..", "uploads");
+const fallbackGifName = "default.gif";
+const fallbackDirectory = path.join(__dirname, "..", "defaults");
+const fallbackGifPath = path.join(fallbackDirectory, fallbackGifName);
 
 if (!fs.existsSync(uploadDirectory)) {
     fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -45,6 +48,7 @@ const upload = multer({
 function getGifFilesSortedByNewest() {
     return fs.readdirSync(uploadDirectory)
         .filter(file => path.extname(file).toLowerCase() === ".gif")
+        .filter(file => file !== fallbackGifName)
         .map(file => {
             const fullPath = path.join(uploadDirectory, file);
             const stats = fs.statSync(fullPath);
@@ -62,11 +66,11 @@ function getGifFilesSortedByNewest() {
 function deleteOlderGifs() {
     const files = getGifFilesSortedByNewest();
 
-    if (files.length <= 1) {
+    if (files.length <= 2) {
         return;
     }
 
-    const filesToDelete = files.slice(1);
+    const filesToDelete = files.slice(2);
 
     for (const file of filesToDelete) {
         try {
@@ -106,9 +110,21 @@ router.get("/latest", (req, res) => {
         const files = getGifFilesSortedByNewest();
 
         if (files.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Noch keine GIFs vorhanden."
+            if (!fs.existsSync(fallbackGifPath)) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Kein GIF und kein Fallback vorhanden."
+                });
+            }
+
+            return res.json({
+                success: true,
+                latestGif: {
+                    name: fallbackGifName,
+                    path: `/defaults/${fallbackGifName}`,
+                    modifiedTime: null,
+                    isFallback: true
+                }
             });
         }
 
@@ -117,7 +133,8 @@ router.get("/latest", (req, res) => {
             latestGif: {
                 name: files[0].name,
                 path: files[0].path,
-                modifiedTime: files[0].modifiedTime
+                modifiedTime: files[0].modifiedTime,
+                isFallback: false
             }
         });
     } catch (error) {

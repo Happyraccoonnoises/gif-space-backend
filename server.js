@@ -3,12 +3,13 @@ const cors = require("cors");
 const path = require("path");
 require("dotenv").config();
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 const apiRoutes = require("./routes/api");
 const paymentRoutes = require("./routes/payments");
 const uploadRoutes = require("./routes/uploads");
-
-const app = express();
-const PORT = process.env.PORT || 3000;
+const modRoutes = require("./routes/mod");
 
 const allowedOrigins = [
     "http://localhost:5500",
@@ -37,7 +38,9 @@ app.get("/", (req, res) => {
 app.use("/api", apiRoutes);
 app.use("/payments", paymentRoutes);
 app.use("/uploads", uploadRoutes);
+app.use("/moderation", modRoutes);
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/defaults", express.static(path.join(__dirname, "defaults")));
 
 app.listen(PORT, () => {
     console.log(`Server läuft auf http://localhost:${PORT}`);
