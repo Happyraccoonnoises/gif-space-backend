@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 
 const router = express.Router();
 
@@ -9,6 +10,7 @@ const uploadDirectory = path.join(__dirname, "..", "uploads");
 const fallbackGifName = "default.gif";
 const fallbackDirectory = path.join(__dirname, "..", "defaults");
 const fallbackGifPath = path.join(fallbackDirectory, fallbackGifName);
+const blacklistFilePath = path.join(__dirname, "..", "data", "gif-blacklist.json");
 
 if (!fs.existsSync(uploadDirectory)) {
     fs.mkdirSync(uploadDirectory, { recursive: true });
@@ -48,7 +50,6 @@ const upload = multer({
 function getGifFilesSortedByNewest() {
     return fs.readdirSync(uploadDirectory)
         .filter(file => path.extname(file).toLowerCase() === ".gif")
-        .filter(file => file !== fallbackGifName)
         .map(file => {
             const fullPath = path.join(uploadDirectory, file);
             const stats = fs.statSync(fullPath);
@@ -82,6 +83,35 @@ function deleteOlderGifs() {
     }
 }
 
+function getFileHash(filePath) {
+    const fileBuffer = fs.readFileSync(filePath);
+
+    return crypto
+        .createHash("sha256")
+        .update(fileBuffer)
+        .digest("hex");
+}
+
+function readBlacklist() {
+    try {
+        if (!fs.existsSync(blacklistFilePath)) {
+            return { blockedHashes: [] };
+        }
+
+        const rawData = fs.readFileSync(blacklistFilePath, "utf8");
+        const parsedData = JSON.parse(rawData);
+
+        if (!Array.isArray(parsedData.blockedHashes)) {
+            return { blockedHashes: [] };
+        }
+
+        return parsedData;
+    } catch (error) {
+        console.error("Fehler beim Lesen der Blacklist:", error);
+        return { blockedHashes: [] };
+    }
+}
+
 router.post("/gif", upload.single("gifFile"), (req, res) => {
     if (!req.file) {
         return res.status(400).json({
@@ -90,19 +120,50 @@ router.post("/gif", upload.single("gifFile"), (req, res) => {
         });
     }
 
-    deleteOlderGifs();
+    try {
+        const uploadedFilePath = path.join(uploadDirectory, req.file.filename);
+        const fileHash = getFileHash(uploadedFilePath);
+        const blacklist = readBlacklist();
 
-    res.status(201).json({
-        success: true,
-        message: "GIF erfolgreich hochgeladen.",
-        file: {
-            originalName: req.file.originalname,
-            storedName: req.file.filename,
-            size: req.file.size,
-            mimeType: req.file.mimetype,
-            path: `/uploads/${req.file.filename}`
+        if (blacklist.blockedHashes.includes(fileHash)) {
+            fs.unlinkSync(uploadedFilePath);
+
+            return res.status(403).json({
+                success: false,
+                message: "Dieses GIF ist geblacklistet und wurde abgelehnt."
+            });
         }
-    });
+
+        deleteOlderGifs();
+
+        return res.status(201).json({
+            success: true,
+            message: "GIF erfolgreich hochgeladen.",
+            file: {
+                originalName: req.file.originalname,
+                storedName: req.file.filename,
+                size: req.file.size,
+                mimeType: req.file.mimetype,
+                path: `/uploads/${req.file.filename}`,
+                hash: fileHash
+            }
+        });
+    } catch (error) {
+        console.error("Fehler bei der Upload-Prüfung:", error);
+
+        if (req.file) {
+            const uploadedFilePath = path.join(uploadDirectory, req.file.filename);
+
+            if (fs.existsSync(uploadedFilePath)) {
+                fs.unlinkSync(uploadedFilePath);
+            }
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Fehler bei der Verarbeitung des Uploads."
+        });
+    }
 });
 
 router.get("/latest", (req, res) => {
